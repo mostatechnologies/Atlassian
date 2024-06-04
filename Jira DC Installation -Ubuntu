@@ -1,0 +1,166 @@
+Find the appropriate version of jira and database.
+
+Get DB ready:
+Install Postgresql	
+	apt install postgresql-xxversionxx
+	
+Stand alone instance(make sure uid and gid should be same on both serves)jira:x:1001:1001- 1- {$ usermod -u 1001 jira 2-$ groupmod -g 1001 jira}
+**********************************
+Get Node1 ready:
+
+- Install OS as per jira compatibility
+- make identical configuration like disk, memory, cpu, etc.
+- Configure static IP, datetime, zone
+- configure ssh for management purpose
+- create file system
+
+	mkdir -p /Atlassian/Jira/Application/
+	mkdir -p /Atlassian/Jira/Data
+	mkdir -p /Atlassian/Jira/jira_shared_home
+
+
+- mount "jira_shared_home" to the the NFS share following below.
+	
+	install nfs client	($ apt install nfs-common) 
+	edit /etc/fstab and append below line.
+		$ ano /etc/fstab
+		192.168.200.126:/mnt/vg01/jira_shared_home/jira_shared_home     /Atlassian/Jira/jira_shared_home        nfs     defaults        0       0
+		$ mount -a (may be take reboot)
+		
+- Now Install Jira
+	-download the installer .bin file from atlassian site and save it to local directory.
+	- Make the installer executable
+		$ sudo chmod a+x atlassian-jira-software-X.X.X-x64.bin
+	- Run installer
+		$ sudo ./atlassian-jira-software-X.X.X-x64.bin
+	-Follow the prompts to install Jira. You'll be asked for the following info	
+		Install type – choose option 2 (custom) for the most control. 
+		Destination directory – this is where Jira will be installed.
+		Home directory – this is where Jira data like logs, search indexes and files will be stored.
+		TCP ports ( use default port as port 80 not allowed in linux system. Later we can forward the traffic using Nginx load balancer)
+		Install as service-this option is only available if you ran the installer as sudo
+		Once installation is complete head to http://localhost:8080 in your browser to begin the setup process. (Replace 8080 if you chose a different port during installation) . 
+-Set up your Jira application
+	-Choose set up method, I'll set it up myself.
+	-Connect to your database
+	-Set application properties
+	-Enter your license
+	- Create your administrator account
+
+- Now start using Jira a stand alone system without any high availability.
+
+
+Setup jira with Cluster setup.
+********************************
+
+-Now we can setup existing node as cluster node and then can add second node to the cluster.
+
+-Stop your Jira instance.
+
+-Copy the following directories from the Jira local home directory to the new sharedhome directory (some of them may be empty).
+	(data, plugins, logos, import, export, caches, keys)
+	- cp -R data /Atlassian/Jira/jira_shared_home/
+	cp -R plugins /Atlassian/Jira/jira_shared_home/
+	cp -R logos /Atlassian/Jira/jira_shared_home/
+	cp -R import /Atlassian/Jira/jira_shared_home/
+	cp -R export /Atlassian/Jira/jira_shared_home/
+	cp -R caches /Atlassian/Jira/jira_shared_home/
+	cp -R keys /Atlassian/Jira/jira_shared_home/
+
+- In the Jira local home directory, create a cluster.properties file, with contents as follows: 	
+	jira.node.id = jira01.mostya.com
+	jira.shared.home = /Atlassian/Jira/jira_shared_home
+
+-For Linux installations: We recommend that you increase the maximum number of open files. To do that, add the following line to <jira-install>/bin/setenv.sh:
+	ulimit -n 16384- you might see thissetting on top of the file
+
+ Now Setup your Nginx server first
+******************************
+- Install nginx server
+
+	$ apt install nginx
+	by default it will go to - /var/www/html
+- make a directory to store your file for web application.(In the case of jira we will forward the request to jira server, here we can skip this step )
+
+- Now we need to create a server block in the configuration file.
+- We will copy the default file and make a newconfiguration file out of it.
+	$ cp /etc/nginx/sites-available/defaut //etc/nginx/sites-available/www.jira.mostya.com
+	now make some changes to the new file like below
+	$ nano /etc/nginx/sites-available/www.jira.mostya.com.conf -add below content
+		
+		upstream backend {
+				  ip_hash;
+      				  server jira01.mostya.com:8080;
+				  server jira02.mostya.com:8080;	
+
+       				 }
+
+        		server {
+      			listen 80;
+        			server_name www.jira.mostya.com;
+        			location / {
+       				 proxy_pass http://backend;
+       				 }
+     			}
+
+- Now we have to enable this configuration (remeober to remove the old default config file before that)
+	$ rm  /etc/nginx/sites-available/default
+	$ ln -s /etc/nginx/sites-available/www.jira.mostya.com.conf /etc/nginx/sites-enabled/
+
+- Next, check Nginx for any syntax error with the following command:
+
+	$ nginx -t
+
+-Restart the nginx server
+	$ systemctl restart nginx
+
+-Now you should be be redirecting to the Jira home page.
+
+http://<jiraurl>/status
+
+***************************************************************
+
+-Get Node2 ready:
+	-- Install OS: Same OS and version suggested
+	 
+- Verify if you are able to see the shared content?
+
+- make identical configuration like disk, memory, cpu, etc.
+- Configure static IP, datetime, zone
+- configure ssh for management purpose
+- create file same file system
+
+	mkdir -p /Atlassian/Jira/Application/
+	mkdir -p /Atlassian/Jira/Data
+	mkdir -p /Atlassian/Jira/jira_shared_home
+
+
+- mount "jira_shared_home" to the the NFS share following below.
+	
+	install nfs client	($ apt install nfs-common) 
+	edit /etc/fstab and append below line.
+		$ ano /etc/fstab
+		192.168.200.126:/mnt/vg01/jira_shared_home/jira_shared_home     /Atlassian/Jira/jira_shared_home        nfs     defaults        0       0
+		$ mount -a (may be take reboot)
+
+- Now Install Jira
+	-download the installer .bin file from atlassian site and save it to local directory.
+	- Make the installer executable
+		$ sudo chmod a+x atlassian-jira-software-X.X.X-x64.bin
+	- Run installer
+		$ sudo ./atlassian-jira-software-X.X.X-x64.bin
+	-Follow the prompts to install Jira. You'll be asked for the following info	
+		Install type – choose option 2 (custom) for the most control. 
+		Destination directory – this is where Jira will be installed.
+		Home directory – this is where Jira data like logs, search indexes and files will be stored.
+		TCP ports ( use default port as port 80 not allowed in linux system. Later we can forward the traffic using Nginx load balancer)
+		Install as service-this option is only available if you ran the installer as sudo
+		Once installation is complete head to http://localhost:8080 in your browser to begin the setup process. (Replace 8080 if you chose a different port during installation) . 
+-Set up your Jira application
+	- Now, when you see the setup wizard that means installation went well. Stop the jira sercive and configure further.
+	- copy server.xml, dbconfig.xml and cluster.property file from first node to new node. Make sure they go to same directory path.
+	- make neccessary changes in cluster.property file (change node.id)
+	- Start the service and access the page.
+	- In background synchronization process will kick in and will do the necessary cluster related task. 
+
+You are good to go now.
